@@ -40,8 +40,6 @@ use libp2p::kad::store::RecordStore;
 /// `use crate::errors::*;` to get access to everything `error_chain` creates.
 pub mod errors;
 
-use crate::errors::bail;
-
 #[async_std::main]
 async fn main() -> Result<(), Box<dyn Error>> {
     // Create a random key for ourselves.
@@ -138,13 +136,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Create a swarm to manage peers and events.
     let mut swarm = {
         // Create a Kademlia behaviour.
-        let mut store = MemoryStore::new(local_peer_id);
-        let _ = store.put(Record::new(Key::new(&"andrew"), Vec::from("55")));
+        let store = MemoryStore::new(local_peer_id);
         let kademlia = Kademlia::new(local_peer_id, store);
         let mdns = block_on(Mdns::new(MdnsConfig::default()))?;
         let behaviour = MyBehaviour { kademlia, mdns };
         Swarm::new(transport, behaviour, local_peer_id)
     };
+
+    preload_store(&mut swarm.behaviour_mut().kademlia)?;
 
     // Read full lines from stdin
     let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
@@ -164,6 +163,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
             }
         }
     }
+}
+
+fn preload_store(kademlia: &mut Kademlia<MemoryStore>) -> crate::errors::Result<()> {
+    let record = Record::new(Key::new(&"andrew"), Vec::from("55"));
+    kademlia.put_record(record, Quorum::One )?;
+
+    Ok(())
 }
 
 fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) -> crate::errors::Result<()> {
@@ -188,8 +194,7 @@ fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) -> crat
                 expires: None,
             };
             kademlia
-                .put_record(record, Quorum::One)
-                .expect("Failed to store record locally.");
+                .put_record(record, Quorum::One)?;
         }
         "PUT_PROVIDER" => {
             let key = Key::new(&args.next().ok_or("Expected key")?);
