@@ -163,7 +163,7 @@ async fn main() -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn create_store(peer_id: PeerId, client: bool) -> crate::errors::Result<MemoryStore> {
+fn create_store(peer_id: PeerId, client: bool) -> errors::Result<MemoryStore> {
     let mut store = MemoryStore::new(peer_id);
 
     if !client {
@@ -182,7 +182,7 @@ fn preload_store(kademlia: &mut Kademlia<MemoryStore>) -> crate::errors::Result<
 }
 */
 
-fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) -> crate::errors::Result<()> {
+fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) -> errors::Result<()> {
     let mut args = line.split(' ');
 
     match &args.next().map(|s| s.to_ascii_uppercase()).ok_or("Could not parse input string")? as &str {
