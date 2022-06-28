@@ -28,6 +28,13 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Set up a an encrypted DNS-enabled TCP Transport over the Mplex protocol.
     let transport = development_transport(local_key).await?;
 
+    let client = std::env::args().skip(1).next() == Some("client".into());
+    if client {
+        println!("Started in CLIENT mode");
+    } else {
+        println!("Started in SERVER mode");
+    }
+
     // We create a custom network behaviour that combines Kademlia and mDNS.
     #[derive(NetworkBehaviour)]
     #[behaviour(event_process = true)]
@@ -114,14 +121,12 @@ async fn main() -> Result<(), Box<dyn Error>> {
     // Create a swarm to manage peers and events.
     let mut swarm = {
         // Create a Kademlia behaviour.
-        let store = MemoryStore::new(local_peer_id);
+        let store = create_store(local_peer_id, client)?;
         let kademlia = Kademlia::new(local_peer_id, store);
         let mdns = block_on(Mdns::new(MdnsConfig::default()))?;
         let behaviour = MyBehaviour { kademlia, mdns };
         Swarm::new(transport, behaviour, local_peer_id)
     };
-
-    preload_store(&mut swarm.behaviour_mut().kademlia)?;
 
     // Read full lines from stdin
     let mut stdin = io::BufReader::new(io::stdin()).lines().fuse();
@@ -130,9 +135,22 @@ async fn main() -> Result<(), Box<dyn Error>> {
     swarm.listen_on("/ip4/0.0.0.0/tcp/0".parse()?)?;
 
     // loop - processing commands from stdin or events from the network
-    loop {
-        select! {
-            line = stdin.select_next_some() => handle_input_line(&mut swarm.behaviour_mut().kademlia, line.expect("Stdin not to close"))?,
+    if client {
+        loop {
+            select! {
+                line = stdin.select_next_some() => handle_input_line(&mut swarm.behaviour_mut().kademlia,
+                    line.expect("Stdin not to close"))?,
+                event = swarm.select_next_some() => match event {
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        println!("Listening on {:?}", address);
+                    },
+                    _ => {}
+                }
+            }
+        }
+    } else {
+        loop {
+            select! {
             event = swarm.select_next_some() => match event {
                 SwarmEvent::NewListenAddr { address, .. } => {
                     println!("Listening on {:?}", address);
@@ -140,15 +158,29 @@ async fn main() -> Result<(), Box<dyn Error>> {
                 _ => {}
             }
         }
+        }
+
     }
 }
 
+fn create_store(peer_id: PeerId, client: bool) -> crate::errors::Result<MemoryStore> {
+    let mut store = MemoryStore::new(peer_id);
+
+    if !client {
+        store.put(Record::new(Key::new(&"andrew"), Vec::from("55")))?;
+    }
+
+    Ok(store)
+}
+
+/*
 fn preload_store(kademlia: &mut Kademlia<MemoryStore>) -> crate::errors::Result<()> {
     let record = Record::new(Key::new(&"andrew"), Vec::from("55"));
     kademlia.put_record(record, Quorum::One )?;
 
     Ok(())
 }
+*/
 
 fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) -> crate::errors::Result<()> {
     let mut args = line.split(' ');
@@ -171,14 +203,11 @@ fn handle_input_line(kademlia: &mut Kademlia<MemoryStore>, line: String) -> crat
                 publisher: None,
                 expires: None,
             };
-            kademlia
-                .put_record(record, Quorum::One)?;
+            kademlia.put_record(record, Quorum::One)?;
         }
         "PUT_PROVIDER" => {
             let key = Key::new(&args.next().ok_or("Expected key")?);
-            kademlia
-                .start_providing(key)
-                .expect("Failed to start providing key");
+            kademlia.start_providing(key)?;
         }
         _ => {
             eprintln!("expected GET, GET_PROVIDERS, PUT or PUT_PROVIDER");
