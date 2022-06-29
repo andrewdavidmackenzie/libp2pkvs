@@ -12,10 +12,3 @@ P2P Key-Value Store
 2. Type `PUT my-key my-value` in terminal one and hit return.
 3. Type `GET my-key` in terminal two and hit return.
 4. Close both with Ctrl-c.
-
-
-You can also store provider records instead of key value records.
-1. Using two terminal windows, start two instances. If you local network allows mDNS, they will automatically connect.
-2. Type `PUT_PROVIDER my-key` in terminal one and hit return.
-3. Type `GET_PROVIDERS my-key` in terminal two and hit return.
-4. Close with Ctrl-c.
